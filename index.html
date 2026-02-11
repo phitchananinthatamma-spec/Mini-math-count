@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>COUNT RAID : NEON HACK</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+  margin:0;
+  background:#000;
+  color:#00ffe7;
+  font-family: 'Segoe UI', sans-serif;
+  text-align:center;
+}
+.container{
+  max-width:420px;
+  margin:40px auto;
+  padding:20px;
+  border:2px solid #00ffe7;
+  box-shadow:0 0 20px #00ffe7;
+  border-radius:12px;
+}
+h1{
+  text-shadow:0 0 10px #00ffe7;
+}
+input,button{
+  width:90%;
+  padding:12px;
+  margin:8px 0;
+  background:#000;
+  border:1px solid #00ffe7;
+  color:#00ffe7;
+  font-size:16px;
+}
+button{
+  cursor:pointer;
+}
+button:hover{
+  background:#00ffe7;
+  color:#000;
+}
+.hidden{display:none;}
+.player{
+  border-bottom:1px solid #00ffe7;
+  padding:5px;
+}
+.answer-btn{
+  display:block;
+  margin:6px auto;
+}
+.correct{color:#00ff00;}
+.wrong{color:#ff0044;}
+</style>
+</head>
+
+<body>
+
+<div class="container" id="menu">
+  <h1>🧠 COUNT RAID</h1>
+  <p>NEON HACK MODE</p>
+  <input id="name" placeholder="ชื่อผู้เล่น">
+  <button onclick="createRoom()">🚀 สร้างห้อง</button>
+  <input id="roomCode" placeholder="รหัสห้อง">
+  <button onclick="joinRoom()">🔑 เข้าห้อง</button>
+</div>
+
+<div class="container hidden" id="lobby">
+  <h2>🔒 ห้อง <span id="roomText"></span></h2>
+  <div id="players"></div>
+  <button onclick="startGame()">▶ เริ่มเกม</button>
+</div>
+
+<div class="container hidden" id="game">
+  <h2 id="question"></h2>
+  <div id="answers"></div>
+  <p id="feedback"></p>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+import { getDatabase, ref, set, push, onValue, update } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAScwLSlNF1i0cAAT-xadJTFOgGUEsIilk",
+  authDomain: "count-raid-game.firebaseapp.com",
+  databaseURL: "https://count-raid-game-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "count-raid-game",
+  storageBucket: "count-raid-game.firebasestorage.app",
+  messagingSenderId: "887793946867",
+  appId: "1:887793946867:web:14c0c60399fcefc8612786"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let roomId = "";
+let playerId = "";
+let qIndex = 0;
+
+const questions = [
+  {q:"มีเสื้อ 3 ตัว กางเกง 2 ตัว เลือกได้กี่แบบ",a:["5","6","8"],c:1},
+  {q:"เลข 1–4 สร้างเลข 2 หลักไม่ซ้ำได้กี่จำนวน",a:["12","16","6"],c:0},
+  {q:"โยนเหรียญ 3 เหรียญ มีผลลัพธ์กี่แบบ",a:["6","8","9"],c:1},
+  {q:"A B C เลือกมา 2 ตัวเรียงได้กี่แบบ",a:["6","3","2"],c:0},
+  {q:"ทางเลือก 4 ทาง แล้วอีกขั้น 5 ทาง มีกี่วิธี",a:["20","9","25"],c:0}
+];
+
+window.createRoom = ()=>{
+  const name=document.getElementById("name").value.trim();
+  if(!name) return alert("ใส่ชื่อก่อน");
+  roomId=Math.random().toString(36).substring(2,6).toUpperCase();
+  playerId=Date.now().toString();
+  set(ref(db,"rooms/"+roomId),{
+    started:false,
+    q:0
+  });
+  set(ref(db,"rooms/"+roomId+"/players/"+playerId),{
+    name,score:0
+  });
+  enterLobby();
+};
+
+window.joinRoom = ()=>{
+  const name=document.getElementById("name").value.trim();
+  roomId=document.getElementById("roomCode").value.trim().toUpperCase();
+  if(!name||!roomId) return alert("ข้อมูลไม่ครบ");
+  playerId=Date.now().toString();
+  set(ref(db,"rooms/"+roomId+"/players/"+playerId),{
+    name,score:0
+  });
+  enterLobby();
+};
+
+function enterLobby(){
+  menu.classList.add("hidden");
+  lobby.classList.remove("hidden");
+  roomText.innerText=roomId;
+  onValue(ref(db,"rooms/"+roomId+"/players"),snap=>{
+    players.innerHTML="";
+    snap.forEach(p=>{
+      players.innerHTML+=`<div class="player">${p.val().name} : ${p.val().score}</div>`;
+    });
+  });
+  onValue(ref(db,"rooms/"+roomId+"/started"),s=>{
+    if(s.val()) startRound();
+  });
+}
+
+window.startGame=()=>{
+  update(ref(db,"rooms/"+roomId),{started:true});
+};
+
+function startRound(){
+  lobby.classList.add("hidden");
+  game.classList.remove("hidden");
+  loadQuestion();
+}
+
+function loadQuestion(){
+  if(qIndex>=questions.length){
+    feedback.innerHTML="🏁 จบเกม <br><button onclick='location.reload()'>เริ่มใหม่</button>";
+    return;
+  }
+  const q=questions[qIndex];
+  question.innerText=q.q;
+  answers.innerHTML="";
+  feedback.innerText="";
+  q.a.forEach((text,i)=>{
+    const b=document.createElement("button");
+    b.className="answer-btn";
+    b.innerText=text;
+    b.onclick=()=>check(i);
+    answers.appendChild(b);
+  });
+}
+
+function check(i){
+  const q=questions[qIndex];
+  if(i===q.c){
+    feedback.innerHTML="<span class='correct'>✔ ถูกต้อง</span>";
+    update(ref(db,"rooms/"+roomId+"/players/"+playerId+"/score"),prev=> (prev||0)+10);
+  }else{
+    feedback.innerHTML="<span class='wrong'>✖ ผิด (เฉลย: "+q.a[q.c]+")</span>";
+  }
+  qIndex++;
+  setTimeout(loadQuestion,1200);
+}
+</script>
+
+</body>
+</html>
